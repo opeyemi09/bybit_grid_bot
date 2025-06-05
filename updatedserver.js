@@ -849,6 +849,50 @@ async function main() {
     })
   })
 
+  app.get("/api/balance", async (req, res) => {
+  try {
+    const resp = await gridBot.bybitClient.getWalletBalance({ accountType: "SPOT" });
+    // Bybit's API returns { result: { balances: [...] } }
+    const balances = resp?.result?.balances || [];
+    res.json({ balances });
+  } catch (err) {
+    res.json({ balances: [] });
+  }
+});
+
+  app.get("/api/market", async (req, res) => {
+  // Price history and current/previous prices
+  const ph = gridBot.priceHistory;
+  const current = ph[ph.length - 1] || 0;
+  const previous = ph[ph.length - 2] || 0;
+  const history = [...ph];
+  const changePercentage = previous ? ((current - previous) / previous) * 100 : 0;
+
+  // ATR & Volatility
+  const atr = gridBot.atr || 0;
+  const volatilityIndex = gridBot.volatilityIndex || 0;
+  const marketCondition = gridBot.marketCondition || "UNKNOWN";
+
+  // Dummy support/resistance/trend (or add your own logic)
+  const support = ph.length ? Math.min(...ph) : 0;
+  const resistance = ph.length ? Math.max(...ph) : 0;
+  const trend = (current > previous) ? "up" : (current < previous) ? "down" : "sideways";
+
+  // Volume (from performance)
+  const totalVolume = gridBot.performance.totalVolume || 0;
+  const averageTradeSize = gridBot.performance.avgTradeSize || 0;
+  // Optionally calculate daily volume from trades
+  const trades = await gridBot.dataManager.loadData("data/trades.json", []);
+  const cutoff = Date.now() - 24 * 60 * 60 * 1000;
+  const dailyVolume = trades.filter(tr => tr.timestamp > cutoff)
+    .reduce((sum, tr) => sum + ((tr.price || 0) * (tr.quantity || 0)), 0);
+
+  res.json({
+    price: { current, previous, changePercentage, history },
+    technical: { atr, volatilityIndex, marketCondition, support, resistance, trend },
+    volume: { totalVolume, averageTradeSize, dailyVolume }
+  });
+});
   app.listen(CONFIG.WEB_PORT, () => {
     console.log(`🌐 Express REST API server running at http://localhost:${CONFIG.WEB_PORT}`)
     console.log(`Endpoints: GET /api/status, /api/trades, /api/performance, /api/grid, /api/config, /api/orders, POST /api/control, PUT /api/config, GET /health`)
